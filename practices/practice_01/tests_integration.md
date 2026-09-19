@@ -6,7 +6,7 @@
 | HTTP API → Валидация | Отсутствует `diff` | POST `/api/reviews` с `{}` | Контролируемый 4xx | TO BE/ADR: валидация входа до ReviewService |
 | HTTP API → Валидация | Некорректный тип `diff` | POST `/api/reviews` с `diff: {}` или `diff: 123` | Контролируемый 4xx | TO BE/ADR: валидация входа |
 | HTTP API → Валидация размера | Слишком большой `diff` | POST `/api/reviews` с `diff`, превышающим порог (порог — Неизвестно / требует уточнения) | Контролируемый 4xx (слишком большой запрос) | TO BE/ADR: ограничение размера до вызова LLM |
-| HTTP API → ReviewService → LLM double | Исключение LLM | POST `/api/reviews` с валидным `diff`, LLM double поднимает исключение | Контролируемый 5xx, без трассировки стека | TO BE/ADR: контролируемая обработка ошибок LLM |
+| HTTP API → ReviewService → LLM double | Исключение LLM | POST `/api/reviews` с валидным `diff`, LLM double поднимает исключение | Контролируемый 5xx, без трассировки стека | TO BE/ADR: контролируемая обработка ошибок LLM; перехват — на месте вызова `llm.generate` (`analysis.md:28`) |
 
 ## Как использовали AI
 
