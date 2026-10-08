@@ -18,5 +18,22 @@
         }
       }
     }
+  },
+  "mcp": {
+    "servers": {
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp",
+        "disabled": false,
+        "codemode": false
+      },
+      "parcelbot": {
+        "type": "local",
+        "command": [
+          "/home/daniil/.venvs/parcelbot-mcp/bin/python",
+          "/home/daniil/ITMOv2-practice4/practices/practice_04/demo/mcp_server.py"
+        ]
+      }
+    }
   }
 }
