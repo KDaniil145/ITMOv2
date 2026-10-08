@@ -13,7 +13,7 @@ ParcelBot (Практика 4)
 - Примеры (покрыто тестами): 5 -> standard, 10 -> standard, 15 -> heavy
 
 Интерфейс
-- service.choose_belt(weight) -> str
+- service.choose_belt(weight, priority=False) -> str
 
 Как запустить тесты
 - make test
@@ -22,18 +22,14 @@ ParcelBot (Практика 4)
 - Никаких внешних зависимостей.
 - Исходный код минимален.
 
-Текущее поведение (с учётом фичи A)
-- weight <= 0 вызывает ValueError
-- 0 < weight <= 10 возвращает "standard"
-- weight > 10 возвращает "heavy"
+Текущее поведение (с учётом фичи A и B)
+- weight <= 0 вызывает ValueError (независимо от priority)
+- 0 < weight <= 10:
+  - при priority=False возвращает "standard"
+  - при priority=True возвращает "express"
+- weight > 10 возвращает "heavy" (независимо от priority)
 
 Планируемые фичи (НЕ реализованы)
-
-B — Приоритетная сортировка
-- Добавить аргумент priority=False.
-- При priority=True и весе <= 10 возвращать "express".
-- При весе > 10 возвращать "heavy" независимо от приоритета.
-- При priority=False сохранять обычную сортировку.
-- Валидация из A должна продолжать работать.
+— нет
 
 Правила для агентов см. в AGENTS.md.

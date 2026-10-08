@@ -18,17 +18,12 @@ make test
 - сначала покажи падающий тест для новой фичи, затем реализацию
 - не делай commit без проверки пользователя
 
-Текущее поведение choose_belt(weight):
-- weight <= 0 -> ValueError
-- 0 < weight <= 10 -> "standard"
-- weight > 10 -> "heavy"
-
-Будущие фичи (не реализованы):
-- Фича B — приоритетная сортировка (см. README):
-  - добавить аргумент priority=False
-  - при priority=True и весе <= 10 возвращать "express"
-  - при весе > 10 возвращать "heavy" независимо от приоритета
-  - при priority=False сохранять обычную сортировку
+Текущее поведение choose_belt(weight, priority=False):
+- weight <= 0 -> ValueError (независимо от priority)
+- 0 < weight <= 10 ->
+  - при priority=True возвращает "express"
+  - при priority=False возвращает "standard"
+- weight > 10 -> "heavy" (независимо от priority)
 
 Стиль кода:
 - см. STYLE_GUIDE.md
