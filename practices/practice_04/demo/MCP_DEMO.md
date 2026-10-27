@@ -7,9 +7,11 @@
 
 ## 1. Назначение собственного MCP
 
-- Инструмент MCP: route_parcel
+- Инструменты MCP: route_parcel, route_parcels
 - Реализация: demo/mcp_server.py
-- Поведение: инструмент route_parcel делегирует бизнес-логику функции choose_belt из service.py.
+- Поведение:
+  - route_parcel делегирует бизнес-логику функции choose_belt из service.py
+  - route_parcels обрабатывает список посылок, делегируя каждый элемент в choose_belt; пер‑элементные доменные ошибки возвращаются как {"error": "..."}
 
 Пояснение полезности для AI-агента:
 - Единый источник правил: логика маршрутизации посылок сосредоточена в одном месте (service.choose_belt), что предотвращает дублирование и расхождение поведения между агентом и тестами.
@@ -76,7 +78,7 @@ python mcp_server.py
 
 ## 3. Пример реального вызова через FastMCP Client (из demo)
 
-Ниже — реальный код, которым мы проверяли подключение и вызовы инструмента route_parcel. Это уже проведённый эксперимент, подтверждённый выводом терминала.
+Ниже — реальный код, которым мы проверяли подключение и вызовы инструментов route_parcel и route_parcels. Это уже проведённый эксперимент, подтверждённый выводом терминала.
 
 ```bash
 # Выполнять из директории demo
@@ -90,42 +92,56 @@ async def main():
         tools = await client.list_tools()
         print("Инструменты:", [tool.name for tool in tools])
 
-        ok = await client.call_tool(
-            "route_parcel",
-            {"weight": 5, "priority": True}
-        )
-        print("Успешный вызов:", ok.data, "Ошибка:", ok.is_error)
+        # route_parcel: корректный и ошибочный вызовы
+        ok = await client.call_tool("route_parcel", {"weight": 5, "priority": True})
+        print("route_parcel OK:", ok.data, "Ошибка:", ok.is_error)
 
-        bad = await client.call_tool(
-            "route_parcel",
-            {"weight": -5},
-            raise_on_error=False
+        bad = await client.call_tool("route_parcel", {"weight": -5}, raise_on_error=False)
+        print("route_parcel BAD is_error:", bad.is_error)
+        print("route_parcel BAD msg:", bad.content[0].text)
+
+        # route_parcels: корректный батч
+        bok = await client.call_tool(
+            "route_parcels",
+            {"parcels": [{"weight": 5}, {"weight": 10, "priority": True}, {"weight": 15}]}
         )
-        print("Некорректный вес, ошибка:", bad.is_error)
-        print("Сообщение:", bad.content[0].text)
+        print("route_parcels OK:", bok.data, "Ошибка:", bok.is_error)
+
+        # route_parcels: частичные ошибки (доменные)
+        bpartial = await client.call_tool(
+            "route_parcels",
+            {"parcels": [{"weight": -1}, {"weight": 5}, {"weight": 0}]}
+        )
+        print("route_parcels PARTIAL:", bpartial.data, "Ошибка:", bpartial.is_error)
+
+        # route_parcels: ошибка валидации (отклонение до вызова)
+        try:
+            bbad = await client.call_tool("route_parcels", {"parcels": [{"priority": True}]})
+            print("route_parcels BAD is_error:", bbad.is_error)
+        except Exception as e:
+            print("route_parcels BAD raised:", e)
 
 asyncio.run(main())
 PY
 ```
 
 Ожидаемые и подтверждённые результаты:
-- В списке инструментов присутствует 'route_parcel'.
-- Для weight=5, priority=True выводит express и is_error=False.
-- Для weight=-5 is_error=True и в сообщении содержится текст об ошибочном весе.
+- В списке инструментов присутствуют 'route_parcel' и 'route_parcels'.
+- route_parcel: weight=5, priority=True → express, is_error=False; weight=-5 → is_error=True, сообщение об ошибке.
+- route_parcels: корректный список → [{"belt": ...}] и is_error=False; частичные доменные ошибки → элементы с {"error": "weight must be positive"}, is_error=False; отсутствие weight/неверные типы → отклонение до вызова (исключение клиента).
 
 ## 4. Подтверждённые результаты реального MCP-клиента
 
-- Список инструментов сервера: ['route_parcel']
+- Список инструментов сервера: ['route_parcel', 'route_parcels']
 
 Корректный вызов:
-- Вход: weight=5, priority=True
-- Результат: express
-- is_error=False
+- route_parcel: вход weight=5, priority=True → express, is_error=False
 
 Некорректный вызов:
-- Вход: weight=-5
-- is_error=True
-- Сообщение: "Error calling tool 'route_parcel': weight must be positive"
+- route_parcel: вход weight=-5 → is_error=True, сообщение: "Error calling tool 'route_parcel': weight must be positive"
+- route_parcels: вход [{"weight": 5}, {"weight": 10, "priority": true}, {"weight": 15}] → [{"belt": "standard"}, {"belt": "express"}, {"belt": "heavy"}], is_error=False
+- route_parcels: вход [{"weight": -1}, {"weight": 5}, {"weight": 0}] → [{"error": "weight must be positive"}, {"belt": "standard"}, {"error": "weight must be positive"}], is_error=False
+- route_parcels: вход [{"priority": true}] → ошибка валидации FastMCP до вызова (исключение клиента)
 
 Пояснение: некорректный вес приводит к ValueError в choose_belt; клиент MCP корректно передаёт ошибку как is_error=True с сообщением.
 

@@ -4,7 +4,7 @@
 
 Код: service.py
 
-Тесты: test_service.py
+Тесты: test_service.py, test_route_parcels.py
 
 Проверка:
 make test
