@@ -1,0 +1,13 @@
+import {test,expect} from './fixtures';
+import {fixture} from './support/backend';
+test.beforeEach(()=>fixture('empty'));test.afterEach(()=>fixture('restore'));
+for(const malformed of ['html','unknown_code'])test(`untrusted ${malformed} write response reconciles without technical output or retry`,async({page})=>{
+ await page.goto('/');await expect(page.getByRole('heading',{name:'Доска задач',exact:true})).toBeVisible();await expect(page.getByText('Создайте первую задачу')).toBeVisible();await page.getByRole('button',{name:'Создать задачу',exact:true}).click();const dialog=page.getByRole('dialog');await dialog.getByLabel('Название (обязательно)',{exact:true}).fill('Сохранённый черновик');let count=0;
+ await page.route('**/api/tasks',async route=>{if(route.request().method()==='POST'){count++;await route.fetch();await route.fulfill(malformed==='html'?{status:500,contentType:'text/html',body:'<h1>SECRET_SQL_TRACE</h1>'}:{status:500,contentType:'application/json',body:JSON.stringify({error:{code:'new_server_code',message:'SECRET_SQL_TRACE',details:[]}})});}else await route.continue();});
+ await dialog.getByRole('button',{name:'Создать',exact:true}).click();await expect(dialog.getByRole('region',{name:'Сведения на сервере'})).toBeVisible();await expect(dialog.getByLabel('Название (обязательно)',{exact:true})).toHaveValue('Сохранённый черновик');await expect(page.getByText('SECRET_SQL_TRACE',{exact:false})).toHaveCount(0);expect(count).toBe(1);expect(fixture('snapshot').tasks).toHaveLength(1);
+});
+test('real independent validation errors focus form order and unknown fields remain general',async({page})=>{
+ await page.goto('/');await expect(page.getByRole('heading',{name:'Доска задач',exact:true})).toBeVisible();await expect(page.getByText('Создайте первую задачу')).toBeVisible();await page.getByRole('button',{name:'Создать задачу',exact:true}).click();const dialog=page.getByRole('dialog');await dialog.getByLabel('Название (обязательно)',{exact:true}).fill('Мой ввод');
+ await page.route('**/api/tasks',async route=>{if(route.request().method()==='POST')await route.continue({postData:JSON.stringify({...route.request().postDataJSON(),title:'',due_date:'bad',unknown:null})});else await route.continue();});
+ await dialog.getByRole('button',{name:'Создать',exact:true}).click();await expect(dialog.getByLabel('Название (обязательно)',{exact:true})).toBeFocused();await expect(dialog.getByLabel('Срок (необязательно)',{exact:true})).toHaveAttribute('aria-invalid','true');await expect(dialog.getByLabel('Название (обязательно)',{exact:true})).toHaveValue('Мой ввод');await expect(dialog.getByRole('alert')).toContainText('Сервер отклонил');expect(fixture('snapshot').tasks).toHaveLength(0);
+});
