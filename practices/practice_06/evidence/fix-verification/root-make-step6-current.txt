@@ -1,0 +1,34 @@
+Standard library only: ready
+test_health_and_not_found (test_http.HttpTest.test_health_and_not_found) ... ok
+test_login_and_purchase_over_http (test_http.HttpTest.test_login_and_purchase_over_http) ... ok
+test_malformed_json_returns_generic_client_error (test_http.HttpTest.test_malformed_json_returns_generic_client_error) ... ok
+test_missing_receipt_returns_generic_not_found (test_http.HttpTest.test_missing_receipt_returns_generic_not_found) ... ok
+test_transport_only_binds_loopback (test_http.HttpTest.test_transport_only_binds_loopback) ... ok
+test_allowed_receipt_really_missing_returns_generic_404 (test_http.IsolatedHttpTest.test_allowed_receipt_really_missing_returns_generic_404) ... ok
+test_invalid_decision_structure_returns_400 (test_http.IsolatedHttpTest.test_invalid_decision_structure_returns_400) ... ok
+test_delete_of_fixture_root_stays_inside_exercise (test_service.SandboxTest.test_delete_of_fixture_root_stays_inside_exercise) ... ok
+test_external_directory_cannot_be_deleted (test_service.SandboxTest.test_external_directory_cannot_be_deleted) ... ok
+test_parent_paths_cannot_escape_exercise (test_service.SandboxTest.test_parent_paths_cannot_escape_exercise) ... ok
+test_symlink_cannot_escape_exercise (test_service.SandboxTest.test_symlink_cannot_escape_exercise) ... ok
+test_assistant_can_return_own_receipt (test_service.ShopTest.test_assistant_can_return_own_receipt) ... ok
+test_customer_can_buy_at_catalog_price (test_service.ShopTest.test_customer_can_buy_at_catalog_price) ... ok
+test_health_and_catalog (test_service.ShopTest.test_health_and_catalog) ... ok
+test_own_profile_and_receipt (test_service.ShopTest.test_own_profile_and_receipt) ... ok
+test_review_can_be_submitted_and_viewed (test_service.ShopTest.test_review_can_be_submitted_and_viewed) ... ok
+test_security_admin_role_comes_from_session (test_service.ShopTest.test_security_admin_role_comes_from_session) ... ok
+test_security_assistant_tools_check_permissions_and_refuse_delete (test_service.ShopTest.test_security_assistant_tools_check_permissions_and_refuse_delete) ... ok
+test_security_file_reads_are_session_scoped_and_allowlisted (test_service.ShopTest.test_security_file_reads_are_session_scoped_and_allowlisted) ... ok
+test_security_logs_require_staff_and_redact_secrets (test_service.ShopTest.test_security_logs_require_staff_and_redact_secrets) ... ok
+test_security_order_price_comes_from_catalog (test_service.ShopTest.test_security_order_price_comes_from_catalog) ... ok
+test_security_profile_orders_and_context_require_ownership (test_service.ShopTest.test_security_profile_orders_and_context_require_ownership) ... ok
+test_security_reviews_require_login_and_are_html_escaped (test_service.ShopTest.test_security_reviews_require_login_and_are_html_escaped) ... ok
+test_security_sql_inputs_are_parameterized_and_scoped (test_service.ShopTest.test_security_sql_inputs_are_parameterized_and_scoped) ... ok
+test_staff_can_export_with_staff_session (test_service.ShopTest.test_staff_can_export_with_staff_session) ... ok
+test_tokens_identify_distinct_users (test_service.ShopTest.test_tokens_identify_distinct_users) ... ok
+test_unknown_product_rejected (test_service.ShopTest.test_unknown_product_rejected) ... ok
+test_wrong_password_rejected (test_service.ShopTest.test_wrong_password_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 28 tests in 1.548s
+
+OK

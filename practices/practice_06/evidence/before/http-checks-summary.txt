@@ -1,0 +1,18 @@
+login alice: HTTP 200; check=PASS
+unauthenticated profile reads Bob: HTTP 200; check=PASS
+unauthenticated GET orders lists both: HTTP 200; check=PASS
+unauthenticated files reads Bob receipt: HTTP 200; check=PASS
+unauthenticated profile SQL injection: HTTP 200; check=PASS
+unauthenticated search SQL injection: HTTP 200; check=PASS
+X-Role spoofing exports profiles without token: HTTP 200; check=PASS
+unauthenticated logs reveal recorded request headers: HTTP 200; check=PASS
+customer purchase overrides catalog price: HTTP 201; check=PASS
+files endpoint reads private note within sandbox: HTTP 200; check=PASS
+assistant context reveals Bob order without login: HTTP 200; check=PASS
+direct assistant read_file exposes private note: HTTP 200; check=PASS
+direct assistant export_profiles without login: HTTP 200; check=PASS
+submit inert stored-XSS marker: HTTP 201; check=PASS
+reviews view returns raw HTML marker: HTTP 200; check=PASS
+dangerous delete_tree removes own sandbox receipt: HTTP 200; check=PASS
+deleted receipt no longer readable: HTTP 500; check=PASS
+Saved 17 request/response records to /home/daniil/ITMOv2/practices/practice_06/evidence/before/http-checks.jsonl
