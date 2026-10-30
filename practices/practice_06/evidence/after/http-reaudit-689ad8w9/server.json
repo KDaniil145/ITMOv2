@@ -1,0 +1,16 @@
+{
+  "pid": 65469,
+  "command": [
+    "/usr/bin/python3",
+    "-B",
+    "service.py",
+    "--port",
+    "0"
+  ],
+  "cwd": "/home/daniil/ITMOv2/practices/practice_06/lab",
+  "startup": [
+    "Local exercise: http://127.0.0.1:46593",
+    "Disposable fixture files: /tmp/itmo-practice-06-brn6yqum"
+  ],
+  "source_sha256": "dc24d7ef46567394b3b4a7a35a0c76cbf925a4184ab8770aab78bcdb7bb2f4c9"
+}

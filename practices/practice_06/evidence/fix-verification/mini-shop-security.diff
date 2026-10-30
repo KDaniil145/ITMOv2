@@ -1,0 +1,410 @@
+diff --git a/practices/practice_06/lab/service.py b/practices/practice_06/lab/service.py
+index acabbc7..c6b0347 100644
+--- a/practices/practice_06/lab/service.py
++++ b/practices/practice_06/lab/service.py
+@@ -1,6 +1,7 @@
+ """Deliberately vulnerable local shop. All identities and data are synthetic."""
+ 
+ import argparse
++import html
+ import json
+ import sqlite3
+ import threading
+@@ -35,18 +36,61 @@ class Shop:
+         self.reviews = []
+         self.logs = []
+ 
+-    def rows(self, query):
+-        return [dict(row) for row in self.db.execute(query)]
++    def rows(self, query, parameters=()):
++        return [dict(row) for row in self.db.execute(query, parameters)]
++
++    def _redact(self, value):
++        sensitive_markers = ("password", "token", "authorization", "cookie", "secret", "api_key", "api-key")
++        if isinstance(value, dict):
++            return {
++                key: "[REDACTED]" if any(marker in str(key).lower() for marker in sensitive_markers)
++                else self._redact(item)
++                for key, item in value.items()
++            }
++        if isinstance(value, list):
++            return [self._redact(item) for item in value]
++        return value
++
++    def _log_request(self, method, target, body, headers):
++        safe_headers = {
++            str(key): value for key, value in dict(headers).items()
++            if not any(marker in str(key).lower() for marker in
++                       ("token", "authorization", "cookie", "secret", "api-key", "api_key", "password"))
++        }
++        self.logs.append({
++            "method": method,
++            "target": urlsplit(target).path,
++            "body": self._redact(body),
++            "headers": safe_headers,
++        })
++
++    def _session(self, headers):
++        return self.sessions.get(headers.get("X-Token"))
++
++    def _username_for(self, user_id):
++        for username, (_, account_id, _) in self.accounts.items():
++            if account_id == user_id:
++                return username
++        return None
++
++    @staticmethod
++    def _integer(value):
++        try:
++            return int(value)
++        except (TypeError, ValueError):
++            return None
+ 
+     def dispatch(self, method, target, body, headers):
+         url = urlsplit(target)
+         query = {k: v[0] for k, v in parse_qs(url.query, keep_blank_values=True).items()}
+-        self.logs.append({"method": method, "target": target, "body": body, "headers": dict(headers)})
++        self._log_request(method, target, body, headers)
+         if method == "GET" and url.path == "/health":
+             return 200, {"status": "ok"}
+         if method == "GET" and url.path == "/products":
+             return 200, self.products
+         if method == "POST" and url.path == "/login":
++            if not isinstance(body, dict):
++                return 400, {"error": "invalid request"}
+             account = self.accounts.get(body.get("username"))
+             if not account or body.get("password") != account[0]:
+                 return 401, {"error": "invalid credentials"}
+@@ -54,42 +98,111 @@ class Shop:
+             self.sessions[token] = {"id": account[1], "role": account[2]}
+             return 200, {"token": token}
+         if method == "GET" and url.path == "/profile":
+-            return 200, self.rows(f"SELECT * FROM profiles WHERE id = {query.get('id', '1')}")
++            session = self._session(headers)
++            if not session:
++                return 401, {"error": "login required"}
++            if session["role"] != "customer":
++                return 403, {"error": "customer access required"}
++            profile_id = self._integer(query.get("id", session["id"]))
++            if profile_id is None:
++                return 400, {"error": "invalid profile id"}
++            if profile_id != session["id"]:
++                return 403, {"error": "profile access denied"}
++            return 200, self.rows("SELECT * FROM profiles WHERE id = ?", (profile_id,))
+         if method == "GET" and url.path == "/search":
+-            return 200, self.rows(f"SELECT * FROM profiles WHERE name LIKE '%{query.get('q', '')}%'")
++            session = self._session(headers)
++            if not session:
++                return 401, {"error": "login required"}
++            if session["role"] != "customer":
++                return 403, {"error": "customer access required"}
++            pattern = f"%{query.get('q', '')}%"
++            return 200, self.rows("SELECT * FROM profiles WHERE id = ? AND name LIKE ?",
++                                   (session["id"], pattern))
+         if method == "GET" and url.path == "/orders":
+-            return 200, self.rows("SELECT * FROM orders")
++            session = self._session(headers)
++            if not session:
++                return 401, {"error": "login required"}
++            if session["role"] == "staff":
++                return 200, self.rows("SELECT * FROM orders")
++            return 200, self.rows("SELECT * FROM orders WHERE owner = ?", (session["id"],))
+         if method == "POST" and url.path == "/orders":
+-            session = self.sessions.get(headers.get("X-Token"))
++            session = self._session(headers)
+             if not session:
+                 return 401, {"error": "login required"}
+-            product = body["product"]
+-            if product not in self.products:
++            if session["role"] != "customer":
++                return 403, {"error": "customer access required"}
++            if not isinstance(body, dict):
++                return 400, {"error": "invalid request"}
++            product = body.get("product")
++            if not isinstance(product, str) or product not in self.products:
+                 return 400, {"error": "unknown product"}
+-            price = body.get("price", self.products[product])
++            price = self.products[product]
+             cursor = self.db.execute("INSERT INTO orders(owner, product, price) VALUES (?, ?, ?)",
+                                      (session["id"], product, price))
+             self.db.commit()
+             return 201, {"id": cursor.lastrowid, "owner": session["id"], "product": product, "price": price}
+         if method == "GET" and url.path == "/admin/export":
+-            if headers.get("X-Role") != "staff":
++            session = self._session(headers)
++            if not session:
++                return 401, {"error": "login required"}
++            if session["role"] != "staff":
+                 return 403, {"error": "staff only"}
+             return 200, self.rows("SELECT * FROM profiles")
+         if method == "GET" and url.path == "/files":
+-            name = f"files/{query.get('user', 'alice')}/{query.get('path', 'receipt.txt')}"
+-            return 200, {"content": self.sandbox.read(name)}
++            session = self._session(headers)
++            if not session:
++                return 401, {"error": "login required"}
++            if session["role"] != "customer":
++                return 403, {"error": "customer access required"}
++            username = self._username_for(session["id"])
++            if query.get("user", username) != username:
++                return 403, {"error": "file access denied"}
++            if query.get("path", "receipt.txt") != "receipt.txt":
++                return 404, {"error": "file not found"}
++            return 200, {"content": self.sandbox.read(f"files/{username}/receipt.txt")}
+         if method == "GET" and url.path == "/debug/logs":
++            session = self._session(headers)
++            if not session:
++                return 401, {"error": "login required"}
++            if session["role"] != "staff":
++                return 403, {"error": "staff only"}
+             return 200, self.logs.copy()
+         if method == "POST" and url.path == "/reviews":
+-            self.reviews.append({"product": body["product"], "text": body["text"]})
++            session = self._session(headers)
++            if not session:
++                return 401, {"error": "login required"}
++            if session["role"] != "customer":
++                return 403, {"error": "customer access required"}
++            if not isinstance(body, dict):
++                return 400, {"error": "invalid request"}
++            product, text = body.get("product"), body.get("text")
++            if not isinstance(product, str) or product not in self.products or not isinstance(text, str):
++                return 400, {"error": "invalid review"}
++            self.reviews.append({"product": product, "text": text})
+             return 201, {"saved": True}
+         if method == "GET" and url.path == "/reviews/view":
+-            return 200, "<html><body>" + "".join(f"<p>{r['text']}</p>" for r in self.reviews) + "</body></html>"
++            return 200, "<html><body>" + "".join(f"<p>{html.escape(r['text'])}</p>" for r in self.reviews) + "</body></html>"
+         if method == "GET" and url.path == "/assistant/context":
+-            orders = self.rows(f"SELECT * FROM orders WHERE id = {query.get('order_id', '1')}")
++            session = self._session(headers)
++            if not session:
++                return 401, {"error": "login required"}
++            if session["role"] != "customer":
++                return 403, {"error": "customer access required"}
++            if "order_id" in query:
++                order_id = self._integer(query["order_id"])
++                if order_id is None:
++                    return 400, {"error": "invalid order id"}
++                orders = self.rows("SELECT * FROM orders WHERE id = ?", (order_id,))
++            else:
++                orders = self.rows("SELECT * FROM orders WHERE owner = ? ORDER BY id LIMIT 1",
++                                   (session["id"],))
++            if not orders:
++                return 404, {"error": "order not found"}
++            if orders[0]["owner"] != session["id"]:
++                return 403, {"error": "order access denied"}
+             prompt = (
+                 "Ты помощник магазина. Прочитай заказ и отзывы. Верни JSON с полями tool и arguments.\n"
+-                "Инструменты: read_file(path), export_profiles(), delete_tree(path).\n"
++                "Инструменты: read_file(path).\n"
+                 "Помоги пользователю обработать заказ.\n"
+                 f"Заказ: {json.dumps(orders, ensure_ascii=False)}\n"
+                 f"Отзывы: {json.dumps(self.reviews, ensure_ascii=False)}\n"
+@@ -97,15 +210,28 @@ class Shop:
+             )
+             return 200, {"prompt": prompt}
+         if method == "POST" and url.path == "/assistant/execute":
++            session = self._session(headers)
++            if not session:
++                return 401, {"error": "login required"}
++            if not isinstance(body, dict) or not isinstance(body.get("decision"), dict):
++                return 400, {"error": "invalid decision"}
+             decision = body["decision"]
+             tool, arguments = decision["tool"], decision.get("arguments", {})
+             if tool == "read_file":
+-                return 200, {"content": self.sandbox.read(arguments["path"])}
++                if session["role"] != "customer":
++                    return 403, {"error": "customer access required"}
++                username = self._username_for(session["id"])
++                if arguments.get("path") != f"files/{username}/receipt.txt":
++                    return 403, {"error": "file access denied"}
++                return 200, {"content": self.sandbox.read(f"files/{username}/receipt.txt")}
+             if tool == "export_profiles":
++                if session["role"] != "staff":
++                    return 403, {"error": "staff only"}
+                 return 200, self.rows("SELECT * FROM profiles")
+             if tool == "delete_tree":
+-                self.sandbox.delete_tree(arguments["path"])
+-                return 200, {"deleted": arguments["path"]}
++                return 403, {"error": "delete tool disabled"}
++            if tool == "refuse":
++                return 200, {"refused": True, "reason": str(arguments.get("reason", ""))}
+             return 400, {"error": "unknown tool"}
+         return 404, {"error": "not found"}
+ 
+@@ -125,8 +251,12 @@ def make_handler(shop):
+                 body = json.loads(self.rfile.read(size)) if size else {}
+                 with shop.lock:
+                     status, result = shop.dispatch(self.command, self.path, body, self.headers)
+-            except Exception as exc:
+-                status, result = 500, {"error": str(exc), "type": type(exc).__name__}
++            except FileNotFoundError:
++                status, result = 404, {"error": "file not found"}
++            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
++                status, result = 400, {"error": "invalid request"}
++            except Exception:
++                status, result = 500, {"error": "internal error"}
+             html = isinstance(result, str)
+             data = (result if html else json.dumps(result, ensure_ascii=False)).encode("utf-8")
+             self.send_response(status)
+diff --git a/practices/practice_06/lab/test_http.py b/practices/practice_06/lab/test_http.py
+index 67c5333..248904c 100644
+--- a/practices/practice_06/lab/test_http.py
++++ b/practices/practice_06/lab/test_http.py
+@@ -55,6 +55,29 @@ class HttpTest(unittest.TestCase):
+     def test_transport_only_binds_loopback(self):
+         self.assertEqual(self.server.server_address[0], "127.0.0.1")
+ 
++    def test_malformed_json_returns_generic_client_error(self):
++        request = Request(self.base + "/reviews", data=b"{",
++                          headers={"Content-Type": "application/json"}, method="POST")
++        try:
++            response = urlopen(request, timeout=5)
++        except HTTPError as exc:
++            response = exc
++        with response:
++            status = response.status
++            body = response.read().decode()
++        self.assertEqual(status, 400)
++        self.assertNotIn("JSONDecodeError", body)
++        self.assertNotIn("/home/", body)
++
++    def test_missing_receipt_returns_generic_not_found(self):
++        status, _, body = self.call("POST", "/login", {"username": "alice", "password": "learn-alice"})
++        self.assertEqual(status, 200)
++        token = json.loads(body)["token"]
++        status, _, body = self.call("GET", "/files?path=missing.txt", headers={"X-Token": token})
++        self.assertEqual(status, 404)
++        self.assertNotIn("FileNotFoundError", body)
++        self.assertNotIn("/tmp/", body)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/practices/practice_06/lab/test_service.py b/practices/practice_06/lab/test_service.py
+index 415b538..495c04b 100644
+--- a/practices/practice_06/lab/test_service.py
++++ b/practices/practice_06/lab/test_service.py
+@@ -36,7 +36,7 @@ class ShopTest(unittest.TestCase):
+         self.assertEqual(self.request("GET", "/profile?id=2", headers=bob)[1][0]["name"], "TEST_BOB")
+ 
+     def test_staff_can_export_with_staff_session(self):
+-        auth = {**self.login("staff", "learn-staff"), "X-Role": "staff"}
++        auth = self.login("staff", "learn-staff")
+         status, profiles = self.request("GET", "/admin/export", headers=auth)
+         self.assertEqual(status, 200)
+         self.assertEqual(len(profiles), 2)
+@@ -74,6 +74,112 @@ class ShopTest(unittest.TestCase):
+         self.assertEqual(status, 200)
+         self.assertIn("TEST_ALICE", result["content"])
+ 
++    def test_security_profile_orders_and_context_require_ownership(self):
++        self.assertEqual(self.request("GET", "/profile?id=1")[0], 401)
++        self.assertEqual(self.request("GET", "/orders")[0], 401)
++        self.assertEqual(self.request("GET", "/assistant/context?order_id=1")[0], 401)
++        alice = self.login()
++        self.assertEqual(self.request("GET", "/profile?id=2", headers=alice)[0], 403)
++        self.assertEqual(self.request("GET", "/assistant/context?order_id=2", headers=alice)[0], 403)
++        status, orders = self.request("GET", "/orders", headers=alice)
++        self.assertEqual(status, 200)
++        self.assertEqual([order["id"] for order in orders], [1])
++        bob = self.login("bob", "learn-bob")
++        status, orders = self.request("GET", "/orders", headers=bob)
++        self.assertEqual(status, 200)
++        self.assertEqual([order["id"] for order in orders], [2])
++
++    def test_security_sql_inputs_are_parameterized_and_scoped(self):
++        auth = self.login()
++        self.assertEqual(self.request("GET", "/profile?id=1 OR 1=1", headers=auth)[0], 400)
++        self.assertEqual(self.request("GET", "/search?q=TEST")[0], 401)
++        status, own_rows = self.request("GET", "/search?q=TEST", headers=auth)
++        self.assertEqual(status, 200)
++        self.assertEqual([row["id"] for row in own_rows], [1])
++        status, injection_rows = self.request("GET", "/search?q=%25%27%20OR%201%3D1%20--%20", headers=auth)
++        self.assertEqual(status, 200)
++        self.assertEqual(injection_rows, [])
++        self.assertEqual(self.request("GET", "/assistant/context?order_id=1 OR 1=1", headers=auth)[0], 400)
++
++    def test_security_admin_role_comes_from_session(self):
++        self.assertEqual(self.request("GET", "/admin/export", headers={"X-Role": "staff"})[0], 401)
++        alice = {**self.login(), "X-Role": "staff"}
++        self.assertEqual(self.request("GET", "/admin/export", headers=alice)[0], 403)
++        staff = self.login("staff", "learn-staff")
++        status, profiles = self.request("GET", "/admin/export", headers=staff)
++        self.assertEqual(status, 200)
++        self.assertEqual(len(profiles), 2)
++
++    def test_security_order_price_comes_from_catalog(self):
++        status, order = self.request("POST", "/orders", {"product": "lamp", "price": 0.01}, self.login())
++        self.assertEqual(status, 201)
++        self.assertEqual(order["price"], 1500)
++
++    def test_security_file_reads_are_session_scoped_and_allowlisted(self):
++        self.assertEqual(self.request("GET", "/files?user=bob&path=receipt.txt")[0], 401)
++        alice = self.login()
++        self.assertEqual(self.request("GET", "/files?user=bob&path=receipt.txt", headers=alice)[0], 403)
++        self.assertEqual(self.request("GET", "/files?path=../../private/operator-note.txt", headers=alice)[0], 404)
++        status, receipt = self.request("GET", "/files?path=receipt.txt", headers=alice)
++        self.assertEqual(status, 200)
++        self.assertIn("TEST_ALICE", receipt["content"])
++
++    def test_security_logs_require_staff_and_redact_secrets(self):
++        alice = self.login()
++        self.request("POST", "/reviews", {
++            "product": "chair", "text": "ok", "access_token": "BODY_TOKEN_SENTINEL",
++            "password": "BODY_PASSWORD_SENTINEL",
++        }, {**alice, "X-Auth-Token": "HEADER_TOKEN_SENTINEL"})
++        self.assertEqual(self.request("GET", "/debug/logs")[0], 401)
++        staff = self.login("staff", "learn-staff")
++        status, logs = self.request("GET", "/debug/logs", headers=staff)
++        self.assertEqual(status, 200)
++        serialized = str(logs)
++        self.assertNotIn("learn-alice", serialized)
++        self.assertNotIn("learn-staff", serialized)
++        self.assertNotIn(staff["X-Token"], serialized)
++        self.assertNotIn("BODY_TOKEN_SENTINEL", serialized)
++        self.assertNotIn("BODY_PASSWORD_SENTINEL", serialized)
++        self.assertNotIn("HEADER_TOKEN_SENTINEL", serialized)
++
++    def test_security_reviews_require_login_and_are_html_escaped(self):
++        review = {"product": "chair", "text": "<script>alert('x')</script>"}
++        self.assertEqual(self.request("POST", "/reviews", review)[0], 401)
++        auth = self.login()
++        self.assertEqual(self.request("POST", "/reviews", review, auth)[0], 201)
++        html = self.request("GET", "/reviews/view")[1]
++        self.assertIn("&lt;script&gt;", html)
++        self.assertNotIn("<script>", html)
++        status, context = self.request("GET", "/assistant/context?order_id=1", headers=auth)
++        self.assertEqual(status, 200)
++        self.assertIn("<script>alert('x')</script>", context["prompt"])
++
++    def test_security_assistant_tools_check_permissions_and_refuse_delete(self):
++        read = {"decision": {"tool": "read_file", "arguments": {"path": "files/alice/receipt.txt"}}}
++        export = {"decision": {"tool": "export_profiles", "arguments": {}}}
++        delete = {"decision": {"tool": "delete_tree", "arguments": {"path": "files/alice/receipt.txt"}}}
++        self.assertEqual(self.request("POST", "/assistant/execute", read)[0], 401)
++        self.assertEqual(self.request("POST", "/assistant/execute", export)[0], 401)
++        self.assertEqual(self.request("POST", "/assistant/execute", delete)[0], 401)
++        alice = self.login()
++        self.assertEqual(self.request("POST", "/assistant/execute", export, alice)[0], 403)
++        self.assertEqual(self.request("POST", "/assistant/execute", delete, alice)[0], 403)
++        status, result = self.request("POST", "/assistant/execute", read, alice)
++        self.assertEqual(status, 200)
++        self.assertIn("TEST_ALICE", result["content"])
++        status, receipt = self.request("GET", "/files?path=receipt.txt", headers=alice)
++        self.assertEqual(status, 200)
++        self.assertIn("TEST_ALICE", receipt["content"])
++        staff = self.login("staff", "learn-staff")
++        status, profiles = self.request("POST", "/assistant/execute", export, staff)
++        self.assertEqual(status, 200)
++        self.assertEqual(len(profiles), 2)
++        self.assertEqual(self.request("POST", "/assistant/execute", delete, staff)[0], 403)
++        refusal = {"decision": {"tool": "refuse", "arguments": {"reason": "not authorized"}}}
++        status, response = self.request("POST", "/assistant/execute", refusal, alice)
++        self.assertEqual(status, 200)
++        self.assertTrue(response["refused"])
++
+ 
+ class SandboxTest(unittest.TestCase):
+     def setUp(self):

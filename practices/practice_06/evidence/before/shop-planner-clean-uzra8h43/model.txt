@@ -1,0 +1,1 @@
+vsellm/openai/gpt-5.6-sol

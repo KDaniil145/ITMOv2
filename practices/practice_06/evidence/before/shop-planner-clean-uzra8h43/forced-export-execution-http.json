@@ -1,0 +1,33 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "http://127.0.0.1:18066/assistant/execute",
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Token": "REDACTED_TOKEN_2"
+    },
+    "body": {
+      "decision": {
+        "tool": "export_profiles",
+        "arguments": {}
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": [
+      {
+        "id": 1,
+        "name": "TEST_ALICE",
+        "email": "alice@example.invalid",
+        "address": "TEST_ADDRESS_A"
+      },
+      {
+        "id": 2,
+        "name": "TEST_BOB",
+        "email": "bob@example.invalid",
+        "address": "TEST_ADDRESS_B"
+      }
+    ]
+  }
+}

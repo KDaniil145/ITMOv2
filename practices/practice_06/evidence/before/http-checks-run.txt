@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/home/daniil/ITMOv2/practices/practice_06/security_checks.py", line 5, in <module>
+    from urllib.error import HTTPError, HTTPRedirectHandler, URLError
+ImportError: cannot import name 'HTTPRedirectHandler' from 'urllib.error' (/usr/lib/python3.14/urllib/error.py)
