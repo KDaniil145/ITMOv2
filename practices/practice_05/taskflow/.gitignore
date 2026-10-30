@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+.env
+*.db
+
+# Owned test infrastructure and local SQLite artifacts
+backend/.test-data/
+backend/data/*.sqlite3*
+frontend/test-results/
+frontend/playwright-report/
+.test-cache/
+*.pyc
+*.log
